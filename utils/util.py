@@ -86,14 +86,17 @@ def yield_images(filepath, frame_step_size=1, batch_size=1):
         frames_to_analyze = [x for x in range(0, frame_count, frame_step_size)]
         frames_to_analyze.reverse()
 
-        while True:
+        while not len(frames_to_analyze) == 0:
             frames = []
             timestamps = []
 
             # get video frames
             for i in range(batch_size):
                 # Set frame idx
-                cap.set(cv2.CAP_PROP_POS_FRAMES, frames_to_analyze.pop())
+                if not len(frames_to_analyze) == 0:
+                    cap.set(cv2.CAP_PROP_POS_FRAMES, frames_to_analyze.pop())
+                else:
+                    continue
 
                 # Read frame
                 ret, frame = cap.read()

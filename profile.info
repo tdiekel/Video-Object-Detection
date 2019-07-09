@@ -1,0 +1,7 @@
+Exit status: died with exit code 1
+Command: python -m cProfile -o profile.pstats detect.py --data-path ./data/videos --videos one --fname Referenzvideo2S-bw.avi --label-map ./data/models/tensorflow/01_all_faster_r50/label_map.json tensorflow -g ./data/models/tensorflow/01_all_faster_r50 --max-class-id 206 --tf-batch-size 5
+Slots required: 1
+Enqueue time: Mon Jul  8 22:58:14 2019
+Start time: Mon Jul  8 22:58:14 2019
+End time: Tue Jul  9 00:06:43 2019
+Time run: 4109.183594s

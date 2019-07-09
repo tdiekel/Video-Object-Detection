@@ -1,5 +1,19 @@
 conda activate detect
-cd home/tdiekel/Masterarbeit/04_Umsetzung/03_Quellcode/10_VideoDetect/VideoObjectDetection
+cd home/osm/tdiekel/Masterarbeit/04_Umsetzung/03_Quellcode/10_VideoDetect/VideoObjectDetection
 
-tsp -m -L PYProfiler python -m cProfile -o profile.pstats detect.py --data-path ./data/videos --videos one --fname Referenzvideo2S-bw.avi --label-map ./data/models/tensorflow/01_all_faster_r50/label_map.json tensorflow -g ./data/models/tensorflow/01_all_faster_r50 --max-class-id 206 --tf-batch-size 5
-tsp -m -L ProfPlot gprof2dot -f pstats profile.pstats | dot -Tsvg -o detect.svg
+tsp -m -L PYProfiler python -m cProfile -o profile.pstats detect.py \
+	--data-path ./data/videos \
+	--videos one \
+	--fname Referenzvideo2S-bw.avi \
+	--label-map ./data/models/tensorflow/01_all_faster_r50/label_map.json \
+	tensorflow \
+	-g ./data/models/tensorflow/01_all_faster_r50 \
+	--max-class-id 206 \
+	--tf-batch-size 5
+
+tsp -n bash -c "tsp -i 66 | tee profile.info"
+
+tsp -n bash -c "cp $(tsp -o 66) profile.log"
+
+tsp -m -L ProfPlot bash -c "gprof2dot -f pstats profile.pstats | dot -Tsvg -o detect.svg"
+

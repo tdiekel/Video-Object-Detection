@@ -95,8 +95,6 @@ class TensorFlowDetector(BaseDetector, ABC):
             feed_dict={self.image_tensor: frames})
 
     def run(self):
-        count = 0
-
         # Load the model into memory
         self.load_model()
 
