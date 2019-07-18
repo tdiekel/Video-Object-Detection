@@ -106,7 +106,7 @@ def check_config(config):
 
     # check object_detection
     # TODO check for multiple frameworks
-    assert isinstance(config['object_detection']['tensorflow']['gpu_id'], int), \
+    assert isinstance(config['object_detection']['gpu_id'], int), \
         'GPU ID must be integer.'
 
     # check tensorflow
