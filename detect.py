@@ -3,9 +3,28 @@ import os
 import sys
 from glob import glob
 
-from detectors.TensorFlowDetector import TensorFlowDetector
-# import faulthandler
-# faulthandler.enable()
+import yaml
+
+from Detector import Detector
+
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
+
+
+class Range(object):
+    """ Enables argparse to check ranges
+        Source: https://stackoverflow.com/a/12117089/9943279
+    """
+
+    def __init__(self, start, end):
+        self.start = start
+        self.end = end
+
+    def __eq__(self, other):
+        return self.start <= other <= self.end
+
+    def __repr__(self):
+        return '{0}-{1}'.format(self.start, self.end)
+
 
 def assert_folder(paths):
     """ Asserts every path in paths is a folder.
@@ -27,6 +46,81 @@ def assert_file(file_paths):
             assert os.path.isfile(file_path), 'File not found. \'{}\''.format(file_path)
     else:
         assert os.path.isfile(file_paths), 'File not found. \'{}\''.format(file_paths)
+
+
+def check_config(config):
+    """ Check settings from config.yaml
+    """
+
+    # check settings
+    assert isinstance(config['settings']['queue_size'], int), \
+        'Queue size must be integer.'
+    assert 0 < config['settings']['queue_size'], \
+        'Queue size must be larger than 0.'
+
+    assert isinstance(config['settings']['num_workers'], int), \
+        'FPS step size must be integer.'
+    assert 0 < config['settings']['num_workers'], \
+        'FPS step size must be larger than 0.'
+
+    assert isinstance(config['settings']['batch_size'], int), \
+        'Batch size must be integer.'
+    assert 0 < config['settings']['batch_size'], \
+        'Batch size must be larger than 0.'
+
+    # check data
+    assert isinstance(config['data']['fps_step'], int), \
+        'FPS step size must be integer.'
+    assert 0 < config['data']['fps_step'], \
+        'FPS step size must be larger than 0.'
+
+    assert_file(config['data']['label_map'])
+
+    assert isinstance(config['data']['target_sample_rate'], int), \
+        'Target sample rate must be integer.'
+    assert 0 < config['data']['target_sample_rate'], \
+        'Target sample rate must be larger than 0.'
+
+    assert isinstance(config['data']['relevant_future'], int), \
+        'Relevant future must be integer.'
+    assert 0 < config['data']['relevant_future'], \
+        'Relevant future must be larger than 0.'
+
+    # check road_condition
+    assert_file(config['road_condition']['graph_path'])
+
+    assert isinstance(config['road_condition']['thresh'], float), \
+        'Threshold must be float.'
+    assert 0.0 < config['road_condition']['thresh'] <= 1.0, \
+        'Threshold must be between 0.0 and 1.0.'
+
+    assert_file(config['road_condition']['label_map'])
+
+    assert isinstance(config['road_condition']['num_classes'], int), \
+        'Number of classes must be integer.'
+    assert 0 < config['road_condition']['num_classes'], \
+        'Number of classes must be larger than 0.'
+
+    # check object_detection
+    # TODO check for multiple frameworks
+
+    # check tensorflow
+    assert_file(config['object_detection']['tensorflow']['graph_path'])
+
+    assert config['object_detection']['tensorflow']['input_type'] in ['image_tensor', 'tf_example'], \
+        'Input type must be \'image_tensor\' or \'tf_example\'.'
+
+    assert_file(config['object_detection']['tensorflow']['label_map'])
+
+    assert isinstance(config['object_detection']['tensorflow']['thresh'], float), \
+        'Threshold must be float.'
+    assert 0.0 < config['object_detection']['tensorflow']['thresh'] <= 1.0, \
+        'Threshold must be between 0.0 and 1.0.'
+
+    assert isinstance(config['object_detection']['tensorflow']['max_class_id'], int), \
+        'Max number of classes must be integer.'
+    assert 0 < config['object_detection']['tensorflow']['max_class_id'], \
+        'Max number of classes must be larger than 0.'
 
 
 def check_args(args):
@@ -51,21 +145,6 @@ def check_args(args):
         video_files = glob(os.path.join(args.data_path, '*' + args.file_type))
         assert_file([os.path.join(args.data_path, fname) for fname in video_files])
 
-    if '/' not in args.label_map:
-        args.label_map = os.path.join(args.dataset_path, args.label_map)
-    assert_file(args.label_map)
-
-    '''Subparsers'''
-    # Check tensorflow args
-    assert_folder(args.graph_path)
-
-    args.frozen_inference_graph = os.path.join(args.graph_path, 'frozen_inference_graph.pb')
-    assert_file(args.frozen_inference_graph)
-
-    if '/' not in args.tf_label_map:
-        args.tf_label_map = os.path.join(args.graph_path, args.tf_label_map)
-    assert_file(args.tf_label_map)
-
     return args
 
 
@@ -74,7 +153,8 @@ def parse_args(args):
     """
 
     # Create parser, subparser and groups
-    parser = argparse.ArgumentParser(prog='Object Detection Evaluator', add_help=False)
+    parser = argparse.ArgumentParser(prog='Object Detection Evaluator',
+                                     formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 
     # Parser group for visualizations
     vis_parser = parser.add_argument_group('Visualize settings')
@@ -86,7 +166,8 @@ def parse_args(args):
     vis_parser.add_argument('--thresh_vis',
                             help='Minimum score threshold for a box to be visualized.',
                             type=float,
-                            default=0.6)
+                            default=0.6,
+                            choices=[Range(0.0, 1.0)])
 
     # Parser group for dataset
     ds_parser = parser.add_argument_group('Data settings')
@@ -110,75 +191,28 @@ def parse_args(args):
                            type=str,
                            nargs='*')
     ds_parser.add_argument('--file-type',
-                           help='File type of the videos. (Default: avi)',
+                           help='File type of the videos.',
                            type=str,
                            choices=['avi', 'mp4'],
                            default='avi')
-    ds_parser.add_argument('--fps-step',
-                           help='Step size for frames when analyzing (e.g. fps=2 analyzes every second frame).',
-                           type=int,
-                           default=1)
-    ds_parser.add_argument('--label-map',
-                           help='Name of json label map file. Can also be a path when not in \'--data-path\'.',
-                           type=str,
-                           default='label_map.json')
-
-    # Create subparsers for frameworks
-    subparsers = parser.add_subparsers(description='Frameworks specific arguments', dest='framework')
-
-    # Tensorflow parser
-    tf_parser = subparsers.add_parser(name='tensorflow', help='TensorFlow settings', add_help=False)
-    tf_req = tf_parser.add_argument_group('Required arguments')
-    tf_opt = tf_parser.add_argument_group('Optional arguments')
-    tf_req.add_argument('-g', '--graph-path',
-                        help='Root path of the graph. Folder must contain the \'frozen_inference_graph.pb\' file.',
-                        type=str,
-                        required=True)
-    tf_opt.add_argument('--input-type',
-                        help='Input type the inference graph expects.',
-                        nargs='?',
-                        choices=['image_tensor'],  # , 'tf_example'],
-                        default='image_tensor')
-    tf_req.add_argument('--thresh',
-                        help='Minimum score threshold for detection.',
-                        type=float,
-                        default=0.5)
-    tf_req.add_argument('--tf-label-map',
-                        help='Name of pbtxt label map file. Can also be a path when not in \'--graph-path\'.',
-                        type=str,
-                        default='label_map.pbtxt')
-    tf_req.add_argument('--max-class-id',
-                        help='Class id with the highest number in the dataset. ',
-                        type=int,
-                        required=True)
-    tf_req.add_argument('--tf-batch-size',
-                        help='Number of images or frames to run at once through the network. Reduce when OOM.',
-                        type=int,
-                        default=1)
-    tf_opt.add_argument('-h', '--help',
-                        action='help',
-                        help='Show this help message and exit.')
-
-    # Add help at last
-    optional = parser.add_argument_group('Optional arguments')
-    optional.add_argument('-h', '--help',
-                          action='help',
-                          help='Show this help message and exit.')
 
     return check_args(parser.parse_args(args))
 
 
 def main(args=None):
-    # parse arguments
+    # Parse arguments
     if args is None:
         args = sys.argv[1:]
     args = parse_args(args)
 
-    if args.framework == 'tensorflow':
-        detector = TensorFlowDetector(args)
-    else:
-        sys.exit('Framework \'{}\' currently not supported.'.format(args.framework))
+    # Assert config file exists
+    assert os.path.isfile("./config.yaml"), 'Config file not found. Please do not rename or move!'
 
+    # Check config
+    with open("./config.yaml", 'r') as f:
+        check_config(yaml.safe_load(f))
+
+    detector = Detector(args)
     detector.run()
 
 

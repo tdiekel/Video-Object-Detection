@@ -1,0 +1,80 @@
+#
+# Config file
+#
+# TODO aufbau beschreiben
+
+---
+# General settings
+settings:
+  # Size of the input queue
+  queue_size: 150
+  # Number of workers, no more than cpu cores
+  num_workers: 6
+  # Number of images or frames to run at once through the networks. Reduced when OOM.
+  batch_size: 5
+
+# General settings for input and output data
+data:
+  # Step size for frames when analyzing (e.g. fps=2 analyzes every second frame).
+  fps_step: 10
+  # JSON label map with the class names and ids
+  # Format:
+  # {
+  #    "classes": [
+  #        {
+  #            "id": 1,
+  #            "name": "speed limit 20 (prohibitory)"
+  #        },
+  #        ...
+  #    ]
+  #}
+  label_map: ./data/models/tensorflow/01_all_faster_r50/label_map.json
+  # Target sample rate of output in [Hz]
+  target_sample_rate: 100
+  # Time delta [seconds] in which detected objects are counted as one.
+  # The data will be interpolated between these detections.
+  relevant_future: 5
+
+# Road condition settings
+road_condition:
+  # Path to the TensorFlow graph
+  graph_path: ./recognizer/model/output_graph.pb
+  # Minimum score threshold for detection.
+  # Must be between 0.0 and 1.0
+  thresh: 0.5
+  # txt label map with the class names
+  label_map: ./recognizer/model/output_labels.txt
+  # Number of classes
+  num_classes: 3
+  # Expected height of the input
+  image_height: 224
+  # Expected width of the input
+  image_width: 224
+  # Input layer of graph
+  input_layer: Placeholder
+  # Output layer of graph
+  output_layer: final_result
+
+# Object detection settings
+object_detection:
+  # Settings for TensorFlow
+  tensorflow:
+    # Path to the TensorFlow graph
+    graph_path: ./data/models/tensorflow/01_all_faster_r50/frozen_inference_graph.pb
+    # Input type the inference graph expects.
+    # Options: image_tensor, tf_example
+    input_type: image_tensor
+    # pbtxt label map with the class names and ids
+    label_map: ./data/models/tensorflow/01_all_faster_r50/label_map.pbtxt
+    # Minimum score threshold for detection.
+    # Must be between 0.0 and 1.0
+    thresh: 0.5
+    # Class ID with the highest number in the dataset.
+    max_class_id: 206
+
+
+  # Select one framework
+  use_tensorflow: True
+
+
+...
