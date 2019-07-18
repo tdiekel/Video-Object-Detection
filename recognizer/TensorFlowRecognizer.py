@@ -61,21 +61,22 @@ class TensorFlowRecognizer(AbstractRecognizer, ABC):
 
         logger.info('Loading model')
 
-        recognition_graph = tf.Graph()
+        with tf.device('/gpu:{}'.format(self.config['gpu_id'])):
+            recognition_graph = tf.Graph()
 
-        with recognition_graph.as_default():
-            rc_graph_def = tf.GraphDef()
+            with recognition_graph.as_default():
+                rc_graph_def = tf.GraphDef()
 
-            with tf.gfile.GFile(self.config['graph_path'], 'rb') as fid:
-                serialized_graph = fid.read()
-                rc_graph_def.ParseFromString(serialized_graph)
-                tf.import_graph_def(rc_graph_def, name='')
+                with tf.gfile.GFile(self.config['graph_path'], 'rb') as fid:
+                    serialized_graph = fid.read()
+                    rc_graph_def.ParseFromString(serialized_graph)
+                    tf.import_graph_def(rc_graph_def, name='')
 
-            # Save session for later access
-            self.sess = tf.Session(graph=recognition_graph)
+                # Save session for later access
+                self.sess = tf.Session(graph=recognition_graph)
 
-        self.input_operation = recognition_graph.get_operation_by_name(self.config['input_layer'])
-        self.output_operation = recognition_graph.get_operation_by_name(self.config['output_layer'])
+            self.input_operation = recognition_graph.get_operation_by_name(self.config['input_layer'])
+            self.output_operation = recognition_graph.get_operation_by_name(self.config['output_layer'])
 
         logger.info('Model loaded')
 

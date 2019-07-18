@@ -54,6 +54,8 @@ road_condition:
   input_layer: Placeholder
   # Output layer of graph
   output_layer: final_result
+  # ID of the GPU on the PCI bus
+  gpu_id: 1
 
 # Object detection settings
 object_detection:
@@ -72,7 +74,8 @@ object_detection:
     # Class ID with the highest number in the dataset.
     max_class_id: 206
 
-
+  # ID of the GPU on the PCI bus
+  gpu_id: 0
   # Select one framework
   use_tensorflow: True
 

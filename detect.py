@@ -101,8 +101,13 @@ def check_config(config):
     assert 0 < config['road_condition']['num_classes'], \
         'Number of classes must be larger than 0.'
 
+    assert isinstance(config['road_condition']['gpu_id'], int), \
+        'GPU ID must be integer.'
+
     # check object_detection
     # TODO check for multiple frameworks
+    assert isinstance(config['object_detection']['tensorflow']['gpu_id'], int), \
+        'GPU ID must be integer.'
 
     # check tensorflow
     assert_file(config['object_detection']['tensorflow']['graph_path'])
