@@ -4,7 +4,7 @@ from abc import abstractmethod
 
 class AbstractDetector(ABC):
     @abstractmethod
-    def load_model(self):
+    def load_model(self, device_id):
         """ Load model into memory
         """
         pass

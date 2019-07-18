@@ -62,9 +62,8 @@ class TensorFlowRecognizer(AbstractRecognizer, ABC):
         logger.info('Loading model')
 
         # Set gpu device for process
-        os.environ["CUDA_VISIBLE_DEVICES"] = str(self.config['gpu_id'])
+        os.environ["CUDA_VISIBLE_DEVICES"] = "" #str(self.config['device_id'])
 
-        # with tf.device('/gpu:{}'.format(self.config['gpu_id'])):
         recognition_graph = tf.Graph()
 
         with recognition_graph.as_default():

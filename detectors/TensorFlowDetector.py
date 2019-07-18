@@ -44,15 +44,14 @@ class TensorFlowDetector(AbstractDetector, ABC):
                                                                     use_display_name=True)
         return label_map_util.create_category_index(categories)
 
-    def load_model(self):
+    def load_model(self, device_id):
         """ Load the TensorFlow model into memory and get tensor names
         """
         logger.info('Loading model')
 
         # Set gpu device for process
-        os.environ["CUDA_VISIBLE_DEVICES"] = str(self.config['gpu_id'])
-
-        # with tf.device('/gpu:{}'.format(self.config['gpu_id'])):
+        os.environ["CUDA_VISIBLE_DEVICES"] = str(device_id) # str(self.config['device_id'])
+        # with tf.device('/device:GPU:{}'.format(self.config['device_id'])):
         detection_graph = tf.Graph()
 
         with detection_graph.as_default():
@@ -121,7 +120,12 @@ class TensorFlowDetector(AbstractDetector, ABC):
             # Iterate objects in scene
             for object_i in range(objects_in_scene_count):
                 # Get object information
-                timestamp = video_meta['timestamps'][detections[0][object_i]]
+                # TODO Bug
+                #   Es kommen 5 Detections an allerdings nur 1 Timestamp
+                #   bei Datei GOLF-VII_Variant_3F_2018-06-07_19-07-53.avi
+                #   mit fps_step: 90 und batch_size: 5
+                #   vielleicht timer erhöhen
+                timestamp = video_meta['timestamps'][frame_i]
                 class_id.append(int(classes[detections][object_i]))
                 score.append(scores[detections][object_i])
 
@@ -135,8 +139,8 @@ class TensorFlowDetector(AbstractDetector, ABC):
                 })
 
                 # Append to all_detections dict
-                append_all_detections_dict(video_meta['filename'], timestamp, class_id[object_i], score[object_i],
-                                           bbox[object_i], object_i + 1, objects_in_scene_count)
+                append_all_detections_dict(timestamp, class_id[object_i], score[object_i], bbox[object_i], object_i + 1,
+                                           objects_in_scene_count)
 
             # Append to per_class_detections dict
-            append_per_class_dict(video_meta['filename'], timestamp, class_id, score)
+            append_per_class_dict(timestamp, class_id, score)

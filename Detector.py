@@ -5,7 +5,7 @@ import threading
 import time
 from bisect import bisect_left
 from glob import glob
-from multiprocessing import Process, Queue, Pool
+from multiprocessing import Process, Queue, Pool, Lock
 
 import numpy as np
 import pandas as pd
@@ -21,7 +21,7 @@ from utils.vid_util import get_video_meta_data, yield_images
 logger = logging.getLogger('Detector')
 
 # Time to wait for last results to be processed
-WAIT_TIME = 1.0
+WAIT_TIME = 5.0
 # Flag if we have to continue waiting
 CONTINUE_WAITING = True
 # Flag if timer was started
@@ -72,14 +72,12 @@ class Detector:
         # Prepare dicts for detection results
         self.per_class_detections = {
             cat['id']: {
-                'filename': [],
                 'timestamp': [],
                 'score': [],
                 'objects_in_scene_count': []
             } for cat in self.categories
         }
         self.all_detections = {
-            'filename': [],
             'timestamp': [],
             'class_id': [],
             'score': [],
@@ -90,7 +88,6 @@ class Detector:
 
         # Prepare dict for recognition result
         self.all_recognitions = {
-            'filename': [],
             'timestamp': [],
             'label': [],
             'score': []
@@ -114,6 +111,7 @@ class Detector:
             yield file
 
     def run(self):
+        # TODO Zeiten sammeln: Gesamt Zeit, Zeit pro Video, Zeit für Detektion
         # Get globals
         global WAIT_TIMER_STARTED, CONTINUE_WAITING
 
@@ -128,20 +126,36 @@ class Detector:
         q_result_rc = Queue()
         q_result_det = Queue()
 
+        lock_det = Lock()
+
         # Create processes
         p_rc = Process(target=self.recognize_worker, args=(q_img_rc, q_result_rc,))
-        p_det = Process(target=self.detection_worker, args=(q_img_det, q_result_det,))
+        p_det1 = Process(target=self.detection_worker, args=(q_img_det, q_result_det, 0, lock_det,))
+        p_det2 = Process(target=self.detection_worker, args=(q_img_det, q_result_det, 1, lock_det,))
 
         # Start processes
-        processes = [p_rc, p_det]
+        processes = [p_rc, p_det1, p_det2]
         for process in processes:
             process.start()
 
+        # TODO Video read speed up
+        #   https://www.pyimagesearch.com/2017/02/06/faster-video-file-fps-with-cv2-videocapture-and-opencv/
+        #   https://github.com/jrosebr1/imutils/blob/master/imutils/video/filevideostream.py
+
         # Wait for processes to start
+        check_rc = False
+        check_det1 = False
+        check_det2 = False
+
         while True:
-            if not q_result_rc.empty() and not q_result_det.empty():
+            if not q_result_rc.empty():
                 _ = q_result_rc.get()
+                check_rc = q_result_rc.empty()
+            if not q_result_det.empty():
                 _ = q_result_det.get()
+                check_det2 = check_det1 and q_result_det.empty()
+                check_det1 = q_result_det.empty()
+            if check_rc and check_det1 and check_det2:
                 break
 
         # Iterate video files
@@ -270,7 +284,7 @@ class Detector:
                 # Put results in queue
                 q_result_rc.put((recognitions, video_meta))
 
-    def detection_worker(self, q_img_det, q_result_det):
+    def detection_worker(self, q_img_det, q_result_det, device_id, lock):
         """ Runs detection for the images in queue :param q_img_det:
             and puts results in queue :param q_result_det:
 
@@ -280,14 +294,15 @@ class Detector:
 
         # Load the detection model into memory
         detector = self.detector_class()
-        detector.load_model()
+        detector.load_model(device_id)
 
         # Send signal the loading is finished
         q_result_det.put(True)
 
         while True:
-            # Get next frames
-            (frames, video_meta) = q_img_det.get()
+            with lock:
+                # Get next frames
+                (frames, video_meta) = q_img_det.get()
 
             # Run recognition
             detections = detector.detect(frames)
@@ -305,7 +320,6 @@ class Detector:
         # Iterate all recognitions
         for i, recognition in enumerate(recognitions):
             # Save frame information
-            self.all_recognitions['filename'].append(video_meta['filename'])
             self.all_recognitions['timestamp'].append(video_meta['timestamps'][i])
 
             # Save recognition information for all classes
@@ -316,13 +330,12 @@ class Detector:
                 self.all_recognitions['label'][-1].append(label)
                 self.all_recognitions['score'][-1].append(recognition[j])
 
-    def append_all_detections_dict(self, filename, timestamp, class_id, score, bbox, num_of_object_in_scene,
+    def append_all_detections_dict(self, timestamp, class_id, score, bbox, num_of_object_in_scene,
                                    objects_in_scene_count):
         """ Append information to all_detections dict
         """
 
         # Save frame information
-        self.all_detections['filename'].append(filename)
         self.all_detections['timestamp'].append(timestamp)
 
         # Save detection information
@@ -332,7 +345,7 @@ class Detector:
         self.all_detections['num_of_object_in_scene'].append(num_of_object_in_scene)
         self.all_detections['objects_in_scene_count'].append(objects_in_scene_count)
 
-    def append_per_class_dict(self, filename, timestamp, class_ids, scores):
+    def append_per_class_dict(self, timestamp, class_ids, scores):
         """ Append information to per_class_detections dict
         """
 
@@ -346,7 +359,6 @@ class Detector:
             highscore = class_scores[np.argmax(class_scores)]
 
             # Save frame information
-            self.per_class_detections[c_id]['filename'].append(filename)
             self.per_class_detections[c_id]['timestamp'].append(timestamp)
 
             # Save detection information
@@ -356,6 +368,9 @@ class Detector:
     def save_detections(self, video_meta):
         """ Saves detections to disk
         """
+
+        # Rename output folder
+        video_meta['filename'] = video_meta['filename'].replace('.', '_')
 
         # Save detections
         output_dir = os.path.join('./output', video_meta['filename'])
@@ -381,7 +396,7 @@ class Detector:
         # Fill list with all args to run through save_dicts_for_classes()
         arg_list = []
         for class_id in self.per_class_detections:
-            output_path = os.path.join(output_dir, 'detect_{}_{}.csv'.format(class_id, self.id2cat[class_id]))
+            output_path = os.path.join(output_dir, '{}_detect_{}.csv'.format(video_meta['filename'], class_id))
             arg_list.append(((class_id, video_meta), output_path))
 
         with Pool(processes=self.config['settings']['num_workers']) as pool:
@@ -389,6 +404,9 @@ class Detector:
 
         # Clear dicts for next video file
         self.prepare_dicts()
+
+    def save_label_maps(self, output_dir):
+        pass
 
     def save_dicts_for_classes(self, args, output_path):
         """ Run the interpolation function with the args; saves result to disk
@@ -408,7 +426,6 @@ class Detector:
         logger.info('Processing {} - {}'.format(class_id, self.id2cat[class_id]))
 
         # Extract relevant video meta data for readability
-        filename = video_meta['filename']
         duration = video_meta['duration']
         fps = video_meta['fps']
 
@@ -425,7 +442,7 @@ class Detector:
         '''Special case - No object of class class_id found'''
         if len(timestamps) == 0:
             return pd.DataFrame(data={
-                'filename': [filename] * num_data_points,
+                # 'filename': [filename] * num_data_points,
                 'timestamp': [i * sample_period for i in range(num_data_points)],
                 'score': np.zeros(num_data_points),
                 'objects_in_scene_count': np.zeros(num_data_points)
@@ -467,7 +484,6 @@ class Detector:
 
         # Prepare result dict
         result = {
-            'filename': [filename] * num_data_points,
             'timestamp': [],
             'score': [],
             'objects_in_scene_count': []
@@ -558,7 +574,7 @@ class Detector:
 
         for class_id, class_label in enumerate(self.road_condition_label):
             # Prepare result dict
-            result = {'filename': [video_meta['filename']] * num_data_points}
+            result = {}
 
             # Get evaluated timestamps in seconds
             timestamp = np.array(self.all_recognitions['timestamp']) / 1000
@@ -575,7 +591,7 @@ class Detector:
             result['score'][result['score'] < self.config['road_condition']['thresh']] = 0
 
             # Get output path for csv
-            output_path = os.path.join(output_dir, 'recog_{}_{}.csv'.format(class_id, class_label))
+            output_path = os.path.join(output_dir, '{}_recog_{}.csv'.format(video_meta['filename'], class_id))
             # Save to disk
             pd.DataFrame(data=result).to_csv(output_path, index=None)
 

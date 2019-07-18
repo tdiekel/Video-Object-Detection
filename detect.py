@@ -7,7 +7,7 @@ import yaml
 
 from Detector import Detector
 
-os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
+# os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
 
 
 class Range(object):
@@ -101,13 +101,13 @@ def check_config(config):
     assert 0 < config['road_condition']['num_classes'], \
         'Number of classes must be larger than 0.'
 
-    assert isinstance(config['road_condition']['gpu_id'], int), \
-        'GPU ID must be integer.'
+    assert isinstance(config['road_condition']['device_id'], int), \
+        'Device ID must be integer.'
 
     # check object_detection
     # TODO check for multiple frameworks
-    assert isinstance(config['object_detection']['gpu_id'], int), \
-        'GPU ID must be integer.'
+    assert isinstance(config['object_detection']['device_id'], int), \
+        'Device ID must be integer.'
 
     # check tensorflow
     assert_file(config['object_detection']['tensorflow']['graph_path'])
@@ -127,6 +127,10 @@ def check_config(config):
     assert 0 < config['object_detection']['tensorflow']['max_class_id'], \
         'Max number of classes must be larger than 0.'
 
+    # TODO check device type and id
+    #   nur eine cpu
+    #   keine mehrfach vergabe der ids
+    #   bei gpu auch str erlauben, bspw: '0,1'
 
 def check_args(args):
     """
@@ -148,7 +152,7 @@ def check_args(args):
         assert_file([os.path.join(args.data_path, fname) for fname in args.list])
     elif args.videos == 'all':
         video_files = glob(os.path.join(args.data_path, '*' + args.file_type))
-        assert_file([os.path.join(args.data_path, fname) for fname in video_files])
+        assert_file(video_files)
 
     return args
 

@@ -11,12 +11,13 @@ settings:
   # Number of workers, no more than cpu cores
   num_workers: 6
   # Number of images or frames to run at once through the networks. Reduced when OOM.
-  batch_size: 5
+  batch_size: 10
+  # TODO flag für zwei object detection auf gpu
 
 # General settings for input and output data
 data:
   # Step size for frames when analyzing (e.g. fps=2 analyzes every second frame).
-  fps_step: 10
+  fps_step: 30
   # JSON label map with the class names and ids
   # Format:
   # {
@@ -54,8 +55,10 @@ road_condition:
   input_layer: Placeholder
   # Output layer of graph
   output_layer: final_result
-  # ID of the GPU on the PCI bus
-  gpu_id: 1
+  # Device type, cpu or gpu
+  device_type: gpu
+  # ID of the device
+  device_id: 1
 
 # Object detection settings
 object_detection:
@@ -74,8 +77,10 @@ object_detection:
     # Class ID with the highest number in the dataset.
     max_class_id: 206
 
-  # ID of the GPU on the PCI bus
-  gpu_id: 0
+  # Device type, cpu or gpu
+  device_type: gpu
+  # ID of the device
+  device_id: 0
   # Select one framework
   use_tensorflow: True
 
