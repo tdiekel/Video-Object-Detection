@@ -49,34 +49,37 @@ class TensorFlowDetector(AbstractDetector, ABC):
         """
         logger.info('Loading model')
 
-        with tf.device('/gpu:{}'.format(self.config['gpu_id'])):
-            detection_graph = tf.Graph()
+        # Set gpu device for process
+        os.environ["CUDA_VISIBLE_DEVICES"] = str(self.config['gpu_id'])
 
-            with detection_graph.as_default():
-                od_graph_def = tf.GraphDef()
+        # with tf.device('/gpu:{}'.format(self.config['gpu_id'])):
+        detection_graph = tf.Graph()
 
-                with tf.gfile.GFile(self.config_tf['graph_path'], 'rb') as fid:
-                    serialized_graph = fid.read()
-                    od_graph_def.ParseFromString(serialized_graph)
-                    tf.import_graph_def(od_graph_def, name='')
+        with detection_graph.as_default():
+            od_graph_def = tf.GraphDef()
 
-                # Save session for later access
-                self.sess = tf.Session(graph=detection_graph)
+            with tf.gfile.GFile(self.config_tf['graph_path'], 'rb') as fid:
+                serialized_graph = fid.read()
+                od_graph_def.ParseFromString(serialized_graph)
+                tf.import_graph_def(od_graph_def, name='')
 
-            # Input tensor is the image
-            self.image_tensor = detection_graph.get_tensor_by_name('image_tensor:0')
+            # Save session for later access
+            self.sess = tf.Session(graph=detection_graph)
 
-            # Output tensors are the detection boxes, scores, and classes
-            # Each box represents a part of the image where a particular object was detected
-            self.detection_boxes = detection_graph.get_tensor_by_name('detection_boxes:0')
+        # Input tensor is the image
+        self.image_tensor = detection_graph.get_tensor_by_name('image_tensor:0')
 
-            # Each score represents level of confidence for each of the objects.
-            # The score is shown on the result image, together with the class label.
-            self.detection_scores = detection_graph.get_tensor_by_name('detection_scores:0')
-            self.detection_classes = detection_graph.get_tensor_by_name('detection_classes:0')
+        # Output tensors are the detection boxes, scores, and classes
+        # Each box represents a part of the image where a particular object was detected
+        self.detection_boxes = detection_graph.get_tensor_by_name('detection_boxes:0')
 
-            # Number of objects detected
-            self.num_detections = detection_graph.get_tensor_by_name('num_detections:0')
+        # Each score represents level of confidence for each of the objects.
+        # The score is shown on the result image, together with the class label.
+        self.detection_scores = detection_graph.get_tensor_by_name('detection_scores:0')
+        self.detection_classes = detection_graph.get_tensor_by_name('detection_classes:0')
+
+        # Number of objects detected
+        self.num_detections = detection_graph.get_tensor_by_name('num_detections:0')
 
         logger.info('Model loaded')
 

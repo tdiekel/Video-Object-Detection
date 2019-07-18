@@ -61,22 +61,25 @@ class TensorFlowRecognizer(AbstractRecognizer, ABC):
 
         logger.info('Loading model')
 
-        with tf.device('/gpu:{}'.format(self.config['gpu_id'])):
-            recognition_graph = tf.Graph()
+        # Set gpu device for process
+        os.environ["CUDA_VISIBLE_DEVICES"] = str(self.config['gpu_id'])
 
-            with recognition_graph.as_default():
-                rc_graph_def = tf.GraphDef()
+        # with tf.device('/gpu:{}'.format(self.config['gpu_id'])):
+        recognition_graph = tf.Graph()
 
-                with tf.gfile.GFile(self.config['graph_path'], 'rb') as fid:
-                    serialized_graph = fid.read()
-                    rc_graph_def.ParseFromString(serialized_graph)
-                    tf.import_graph_def(rc_graph_def, name='')
+        with recognition_graph.as_default():
+            rc_graph_def = tf.GraphDef()
 
-                # Save session for later access
-                self.sess = tf.Session(graph=recognition_graph)
+            with tf.gfile.GFile(self.config['graph_path'], 'rb') as fid:
+                serialized_graph = fid.read()
+                rc_graph_def.ParseFromString(serialized_graph)
+                tf.import_graph_def(rc_graph_def, name='')
 
-            self.input_operation = recognition_graph.get_operation_by_name(self.config['input_layer'])
-            self.output_operation = recognition_graph.get_operation_by_name(self.config['output_layer'])
+            # Save session for later access
+            self.sess = tf.Session(graph=recognition_graph)
+
+        self.input_operation = recognition_graph.get_operation_by_name(self.config['input_layer'])
+        self.output_operation = recognition_graph.get_operation_by_name(self.config['output_layer'])
 
         logger.info('Model loaded')
 
