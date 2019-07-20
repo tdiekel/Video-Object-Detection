@@ -5,7 +5,7 @@ import threading
 import time
 from bisect import bisect_left
 from glob import glob
-from multiprocessing import Process, Queue, Pool, Lock
+from multiprocessing import Process, Queue, Pool, Lock, Event
 
 import numpy as np
 import pandas as pd
@@ -14,8 +14,8 @@ from scipy.interpolate import interp1d
 from detectors.TensorFlowDetector import TensorFlowDetector
 from recognizer.TensorFlowRecognizer import TensorFlowRecognizer
 from utils.setup_logger import logger
-from utils.util import create_dir, load_config, time_from_ms, FPS
-from utils.vid_util import get_video_meta_data, yield_images
+from utils.util import create_dir, load_config, VideoTimer
+from utils.vid_util import get_video_meta_data, video_worker
 
 # Create class logger
 logger = logging.getLogger('Detector')
@@ -111,7 +111,6 @@ class Detector:
             yield file
 
     def run(self):
-        # TODO Zeiten sammeln: Gesamt Zeit, Zeit pro Video, Zeit für Detektion
         # Get globals
         global WAIT_TIMER_STARTED, CONTINUE_WAITING
 
@@ -119,6 +118,9 @@ class Detector:
         batch_size = self.config['settings']['batch_size']
         fps_step_size = self.config['data']['fps_step']
         queue_size = self.config['settings']['queue_size']
+
+        # Start timer
+        video_timer = VideoTimer().start()
 
         # Create queues, limit size for image queues
         q_img_rc = Queue(maxsize=queue_size // batch_size)
@@ -128,35 +130,27 @@ class Detector:
 
         lock_det = Lock()
 
-        # Create processes
-        p_rc = Process(target=self.recognize_worker, args=(q_img_rc, q_result_rc,))
-        p_det1 = Process(target=self.detection_worker, args=(q_img_det, q_result_det, 0, lock_det,))
-        p_det2 = Process(target=self.detection_worker, args=(q_img_det, q_result_det, 1, lock_det,))
+        # Get GPU device IDs
+        if isinstance(self.config['object_detection']['device_id'], int):
+            device_ids = [self.config['object_detection']['device_id']]
+        else:
+            device_ids = [int(device_id) for device_id in self.config['object_detection']['device_id'].split(',')]
+
+        # Create processes and events
+        events = [Event()]
+        processes = [Process(target=self.recognize_worker, args=(events[0], q_img_rc, q_result_rc,))]
+        for i, device_id in enumerate(device_ids):
+            events.append(Event())
+            processes.append(Process(target=self.detection_worker,
+                                     args=(events[-1], q_img_det, q_result_det, device_id, lock_det,)))
 
         # Start processes
-        processes = [p_rc, p_det1, p_det2]
         for process in processes:
             process.start()
 
-        # TODO Video read speed up
-        #   https://www.pyimagesearch.com/2017/02/06/faster-video-file-fps-with-cv2-videocapture-and-opencv/
-        #   https://github.com/jrosebr1/imutils/blob/master/imutils/video/filevideostream.py
-
         # Wait for processes to start
-        check_rc = False
-        check_det1 = False
-        check_det2 = False
-
-        while True:
-            if not q_result_rc.empty():
-                _ = q_result_rc.get()
-                check_rc = q_result_rc.empty()
-            if not q_result_det.empty():
-                _ = q_result_det.get()
-                check_det2 = check_det1 and q_result_det.empty()
-                check_det1 = q_result_det.empty()
-            if check_rc and check_det1 and check_det2:
-                break
+        for e in events:
+            e.wait()
 
         # Iterate video files
         for filepath in self.get_next_video():
@@ -164,38 +158,17 @@ class Detector:
 
             video_meta = get_video_meta_data(filepath)
 
-            # Create frame generator
-            frame_gen = yield_images(filepath, frame_step_size=fps_step_size, batch_size=batch_size)
+            e_vid = Event()
+            p_vid = Process(target=video_worker,
+                            args=(filepath, video_meta, e_vid, [q_img_rc, q_img_det], fps_step_size, batch_size,))
+            p_vid.start()
 
-            fps = FPS().start()
-            all_frames_seen = False
+            # Measure processing time
+            video_timer.start_detection()
+            video_timer.start_video()
 
             # Iterate frames
             while True:
-                # Check input queue is not full
-                if not all_frames_seen and not q_img_rc.full() and not q_img_det.full():
-                    # Read next frames
-                    try:
-                        frames, timestamps = next(frame_gen)
-                        fps.update(len(frames))
-                    except StopIteration:
-                        # All frames seen, set flag
-                        all_frames_seen = True
-
-                        logger.info("Finished loading video, waiting for detection processes")
-                        continue
-
-                    video_meta['timestamps'] = timestamps
-
-                    logger.info('Put frame {}/{} in detection queues'.format(
-                        fps.frames_seen(), video_meta['nb_frames'] // fps_step_size))
-
-                    ''' Send frames to processes '''
-                    # Road condition process
-                    q_img_rc.put((frames, video_meta))
-
-                    # Detection process
-                    q_img_det.put((frames, video_meta))
 
                 if not q_result_rc.empty():
                     # Process next result
@@ -207,38 +180,57 @@ class Detector:
                                                      self.append_all_detections_dict,
                                                      self.append_per_class_dict)
 
-                # Check if all queue are empty
-                img_queues_empty = q_img_rc.empty() and q_img_det.empty()
-                result_queues_empty = q_result_rc.empty() and q_result_rc.empty()
+                # Check if all frames were set to queues
+                if e_vid.is_set():
 
-                if all_frames_seen and img_queues_empty and result_queues_empty:
-                    # Wait for WAIT_TIME to make sure all items in the result queues where processed
-                    if not WAIT_TIMER_STARTED:
-                        # Start timer
-                        timer = threading.Timer(WAIT_TIME, timer_callback)
-                        timer.start()
+                    # Check if video process is alive
+                    if p_vid.is_alive():
+                        # Finish video process
+                        p_vid.join()
 
-                        # Set timer started
-                        WAIT_TIMER_STARTED = True
+                    # Check if all frames were processed
+                    if q_img_rc.empty() and q_img_det.empty():
+                        # Check if all results were processed
+                        if q_result_rc.empty() and q_result_rc.empty():
+                            # Wait for WAIT_TIME to make sure all items in the result queues where processed
+                            if not WAIT_TIMER_STARTED:
+                                # Start timer
+                                timer = threading.Timer(WAIT_TIME, timer_callback)
+                                timer.start()
 
-                    # Wait for time to call timer_callback
-                    if not CONTINUE_WAITING:
-                        break
+                                # Set timer started
+                                WAIT_TIMER_STARTED = True
 
-            fps.stop()
-            h, m, s, _ = time_from_ms(fps.elapsed() * 1000)
-            logger.info('Processed video {} with {:.2f} frames per second in {:.0f}:{:.0f}:{:.0f}'.format(
-                os.path.basename(filepath), fps.fps(), h, m, s))
+                            # Wait for time to call timer_callback
+                            if not CONTINUE_WAITING:
+                                break
+                            else:
+                                time.sleep(0.1)
+                        else:
+                            time.sleep(0.1)
+                    else:
+                        time.sleep(0.1)
+                else:
+                    time.sleep(0.05)
+
+            video_timer.stop_detection()
 
             # Save detections before loading next video
             self.save_detections(video_meta)
+
+            video_timer.stop_video(video_meta['duration'])
 
             # Reset timer
             WAIT_TIMER_STARTED = False
             CONTINUE_WAITING = True
 
+        # Stop timer
+        video_timer.stop()
+
         logger.info('Finished processing videos')
-        logger.info('Waiting for background processes to finish'.format(TIMEOUT))
+        video_timer.print_times()
+
+        logger.info('Waiting for background processes to finish')
 
         start = time.time()
         while time.time() - start <= TIMEOUT:
@@ -255,10 +247,11 @@ class Detector:
                 p.join()
 
     @staticmethod
-    def recognize_worker(q_img_rc, q_result_rc):
+    def recognize_worker(event, q_img_rc, q_result_rc):
         """ Runs recognition for the images in queue :param q_img_rc:
                 and puts results in queue :param q_append_rc:
 
+        :param event: Event which is set when model is loaded. Type: multiprocessing.Event
         :param q_img_rc: queue with images from the video file
         :param q_result_rc: queue to fill with recognition results
         """
@@ -268,12 +261,12 @@ class Detector:
         recognizer.load_model()
 
         # Send signal the loading is finished
-        q_result_rc.put(True)
+        event.set()
 
         while True:
             if not q_img_rc.empty():
                 # Get next frames
-                (frames, video_meta) = q_img_rc.get()
+                (frames, timestamps, video_meta) = q_img_rc.get()
 
                 # Preprocess
                 frames_preprocessed = recognizer.preprocess(frames)
@@ -282,14 +275,17 @@ class Detector:
                 recognitions = recognizer.recognize(frames_preprocessed)
 
                 # Put results in queue
-                q_result_rc.put((recognitions, video_meta))
+                q_result_rc.put((recognitions, timestamps, video_meta))
 
-    def detection_worker(self, q_img_det, q_result_det, device_id, lock):
+    def detection_worker(self, event, q_img_det, q_result_det, device_id, lock):
         """ Runs detection for the images in queue :param q_img_det:
             and puts results in queue :param q_result_det:
 
+        :param event: Event which is set when model is loaded. Type: multiprocessing.Event
         :param q_img_det: queue with images from the video file
         :param q_result_det: queue to fill with detection results
+        :param device_id: ID of the device to use
+        :param lock: Used to block the q_img_det queue. Type: multiprocessing.Lock
         """
 
         # Load the detection model into memory
@@ -297,30 +293,30 @@ class Detector:
         detector.load_model(device_id)
 
         # Send signal the loading is finished
-        q_result_det.put(True)
+        event.set()
 
         while True:
             with lock:
                 # Get next frames
-                (frames, video_meta) = q_img_det.get()
+                (frames, timestamps, video_meta) = q_img_det.get()
 
             # Run recognition
             detections = detector.detect(frames)
 
             # Put results in queue
-            q_result_det.put((detections, video_meta))
+            q_result_det.put((detections, timestamps, video_meta))
 
     def process_recognitions(self, results):
         """ Append information to all_recognitions dict
         """
 
         # Unpack values
-        (recognitions, video_meta) = results
+        (recognitions, timestamps, video_meta) = results
 
         # Iterate all recognitions
         for i, recognition in enumerate(recognitions):
             # Save frame information
-            self.all_recognitions['timestamp'].append(video_meta['timestamps'][i])
+            self.all_recognitions['timestamp'].append(timestamps[i])
 
             # Save recognition information for all classes
             self.all_recognitions['label'].append([])

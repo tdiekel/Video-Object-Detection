@@ -7,7 +7,7 @@ import yaml
 
 from Detector import Detector
 
-# os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
 
 
 class Range(object):
@@ -101,13 +101,8 @@ def check_config(config):
     assert 0 < config['road_condition']['num_classes'], \
         'Number of classes must be larger than 0.'
 
-    assert isinstance(config['road_condition']['device_id'], int), \
-        'Device ID must be integer.'
-
     # check object_detection
     # TODO check for multiple frameworks
-    assert isinstance(config['object_detection']['device_id'], int), \
-        'Device ID must be integer.'
 
     # check tensorflow
     assert_file(config['object_detection']['tensorflow']['graph_path'])
@@ -127,10 +122,41 @@ def check_config(config):
     assert 0 < config['object_detection']['tensorflow']['max_class_id'], \
         'Max number of classes must be larger than 0.'
 
-    # TODO check device type and id
-    #   nur eine cpu
-    #   keine mehrfach vergabe der ids
-    #   bei gpu auch str erlauben, bspw: '0,1'
+    # CPU / GPU settings
+    possible_device_types = ['cpu', 'gpu']
+
+    for system in ['road_condition', 'object_detection']:
+        config[system]['device_type'] = config[system]['device_type'].lower()
+
+        assert config[system]['device_type'] in possible_device_types, \
+            'Device type must be either \'cpu\' or \'gpu\' ({}).'.format(system)
+
+        if config[system]['device_type'] == 'cpu':
+            assert isinstance(config[system]['device_id'], int), \
+                'Device ID must be integer ({}).'.format(system)
+            assert 0 <= config[system]['device_id'], \
+                'Device ID must be 0 or greater ({}).'.format(system)
+
+        if config[system]['device_type'] == 'gpu':
+            assert isinstance(config[system]['device_id'], int) or isinstance(config[system]['device_id'], str), \
+                'Device ID must be a single integer or multiple comma separated values ({}).'.format(system)
+            if isinstance(config[system]['device_id'], int):
+                assert 0 <= config[system]['device_id'], \
+                    'Device ID must be 0 or greater ({}).'.format(system)
+            if isinstance(config[system]['device_id'], str):
+                device_ids = []
+                for device_id in config[system]['device_id'].split(','):
+                    try:
+                        device_id = int(device_id)
+                    except ValueError:
+                        assert False, \
+                            'Device ID must be integer, \'{}\' is not an integer ({}).'.format(device_id, system)
+                    assert 0 <= device_id, \
+                        'Device ID must be 0 or greater ({}).'.format(system)
+                    assert device_id not in device_ids, \
+                        'Device IDs must be unique ({}).'.format(system)
+                    device_ids.append(device_id)
+
 
 def check_args(args):
     """

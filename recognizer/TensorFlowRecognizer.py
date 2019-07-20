@@ -59,10 +59,19 @@ class TensorFlowRecognizer(AbstractRecognizer, ABC):
         """ Load the TensorFlow model into memory and get tensor names
         """
 
-        logger.info('Loading model')
+        # Set device for process
+        if self.config['device_type'].lower() == 'gpu':
+            device_type = 'gpu'
+            device_id = str(self.config['device_id'])
 
-        # Set gpu device for process
-        os.environ["CUDA_VISIBLE_DEVICES"] = "" #str(self.config['device_id'])
+            os.environ["CUDA_VISIBLE_DEVICES"] = device_id
+        else:
+            device_type = 'cpu'
+            device_id = str(self.config['device_id'])
+
+            os.environ["CUDA_VISIBLE_DEVICES"] = '-1'
+
+        logger.info('Loading model on {}:{}'.format(device_type, device_id))
 
         recognition_graph = tf.Graph()
 

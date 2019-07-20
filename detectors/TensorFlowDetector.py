@@ -47,11 +47,21 @@ class TensorFlowDetector(AbstractDetector, ABC):
     def load_model(self, device_id):
         """ Load the TensorFlow model into memory and get tensor names
         """
-        logger.info('Loading model')
 
-        # Set gpu device for process
-        os.environ["CUDA_VISIBLE_DEVICES"] = str(device_id) # str(self.config['device_id'])
-        # with tf.device('/device:GPU:{}'.format(self.config['device_id'])):
+        # Set device for process
+        if self.config['device_type'].lower() == 'gpu':
+            device_type = 'gpu'
+            device_id = str(self.config['device_id'])
+
+            os.environ["CUDA_VISIBLE_DEVICES"] = device_id
+        else:
+            device_type = 'cpu'
+            device_id = str(self.config['device_id'])
+
+            os.environ["CUDA_VISIBLE_DEVICES"] = '-1'
+
+        logger.info('Loading model on {}:{}'.format(device_type, device_id))
+
         detection_graph = tf.Graph()
 
         with detection_graph.as_default():
@@ -101,7 +111,7 @@ class TensorFlowDetector(AbstractDetector, ABC):
         pass
 
     def process_detections(self, results, append_all_detections_dict, append_per_class_dict):
-        ((boxes, scores, classes, num), video_meta) = results
+        ((boxes, scores, classes, num), timestamps, video_meta) = results
 
         # Get detections above threshold
         detections = np.where(scores >= self.config_tf['thresh'])
@@ -125,7 +135,7 @@ class TensorFlowDetector(AbstractDetector, ABC):
                 #   bei Datei GOLF-VII_Variant_3F_2018-06-07_19-07-53.avi
                 #   mit fps_step: 90 und batch_size: 5
                 #   vielleicht timer erhöhen
-                timestamp = video_meta['timestamps'][frame_i]
+                timestamp = timestamps[frame_i]
                 class_id.append(int(classes[detections][object_i]))
                 score.append(scores[detections][object_i])
 

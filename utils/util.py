@@ -1,9 +1,12 @@
 import datetime
 import os
-
+import logging
 import cv2
 import numpy as np
 import yaml
+
+# Create class logger
+logger = logging.getLogger('Util')
 
 
 def create_dir(path):
@@ -20,6 +23,15 @@ def load_config():
 
     with open("./config.yaml", 'r') as f:
         return yaml.safe_load(f)
+
+
+def time_from_s(s):
+    """ Converts Seconds to Hours, Minutes, Seconds, Milliseconds
+    """
+
+    m, s = divmod(s, 60)
+    h, m = divmod(m, 60)
+    return h, m, s
 
 
 def time_from_ms(ms):
@@ -55,13 +67,11 @@ def preprocess(frames, image_width=None, image_height=None, normalize=False):
     return np.asarray(preprocessed_frames)
 
 
-class FPS:
+class Timer:
     def __init__(self):
-        # store the start time, end time, and total number of frames
-        # that were examined between the start and end intervals
+        # store the start time, end time
         self._start = None
         self._end = None
-        self._numFrames = 0
 
     def start(self):
         # start the timer
@@ -72,6 +82,20 @@ class FPS:
         # stop the timer
         self._end = datetime.datetime.now()
 
+    def elapsed(self):
+        # return the total number of seconds between the start and
+        # end interval
+        return (self._end - self._start).total_seconds()
+
+
+class FPS(Timer):
+    def __init__(self):
+        super().__init__()
+
+        # store total number of frames
+        # that were examined between the start and end intervals
+        self._numFrames = 0
+
     def update(self, increment=1):
         # increment the total number of frames examined during the
         # start and end intervals
@@ -81,11 +105,75 @@ class FPS:
         # return num of seen frames
         return self._numFrames
 
-    def elapsed(self):
-        # return the total number of seconds between the start and
-        # end interval
-        return (self._end - self._start).total_seconds()
-
     def fps(self):
         # compute the (approximate) frames per second
         return self._numFrames / self.elapsed()
+
+
+class VideoTimer(Timer):
+    def __init__(self):
+        super().__init__()
+
+        self._detection_time = 0
+        self._detection_timer = Timer()
+
+        self._video_time = 0
+        self._video_timer = Timer()
+
+        self._videos_seen = 0
+        self._video_duration_processed = 0
+
+    def start_detection(self):
+        self._detection_timer.start()
+
+    def stop_detection(self):
+        self._detection_timer.stop()
+
+        self._detection_time += self._detection_timer.elapsed()
+
+        self._detection_timer._start = None
+        self._detection_timer._end = None
+
+    def start_video(self):
+        self._video_timer.start()
+
+    def stop_video(self, video_duration):
+        self._video_timer.stop()
+        self._video_time += self._video_timer.elapsed()
+
+        self._video_timer._start = None
+        self._video_timer._end = None
+
+        self._videos_seen += 1
+        self._video_duration_processed += video_duration
+
+    def print_times(self):
+        processing_time_per_vid = (self._video_time - self._detection_time) / self._videos_seen
+        processing_time_per_vid_second = (self._video_time - self._detection_time) / self._video_duration_processed
+
+        processing_str = 'Pre- and post processing took\n' \
+                         '\t{:02.0f}:{:02.0f} minutes per video\n' \
+                         '\t{:.2f}s per video second\n'.format(*divmod(processing_time_per_vid, 60),
+                                                               processing_time_per_vid_second)
+
+        detection_time_per_vid = self._detection_time / self._videos_seen
+        detection_time_per_vid_second = self._detection_time / self._video_duration_processed
+
+        detection_str = 'Running inference on networks took\n' \
+                        '\t{:02.0f}:{:02.0f} minutes per video\n' \
+                        '\t{:.2f}s per video second\n'.format(*divmod(detection_time_per_vid, 60),
+                                                              detection_time_per_vid_second)
+
+        elapsed_time = self.elapsed()
+        time_per_vid = elapsed_time / self._videos_seen
+        time_per_vid_second = elapsed_time / self._video_duration_processed
+
+        time_str = 'Whole process took\n' \
+                   '\t{:02.0f}:{:02.0f} minutes per video\n' \
+                   '\t{:.2f}s per video second\n' \
+                   '\t{:.0f}:{:02.0f}:{:02.0f} hours in sum\n'.format(*divmod(time_per_vid, 60),
+                                                                      time_per_vid_second,
+                                                                      *time_from_s(elapsed_time))
+
+        logger.info('\n=== Times spend on the different tasks ===\n'
+                    + processing_str + detection_str + time_str)

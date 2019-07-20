@@ -3,10 +3,15 @@ import os
 import subprocess
 import sys
 from contextlib import contextmanager
-
+import time
 import cv2
+import logging
+from utils.setup_logger import logger
 
-FRAME_COUNT = None
+# Create class logger
+from utils.util import FPS, time_from_ms
+
+logger = logging.getLogger('VideoUtil')
 
 
 def get_video_meta(filename, meta='duration'):
@@ -130,3 +135,40 @@ def yield_images(filepath, frame_step_size=1, batch_size=1):
                 timestamps.append(cap.get(cv2.CAP_PROP_POS_MSEC))
 
             yield frames, timestamps
+
+
+def video_worker(filepath, video_meta, e_vid, queues, frame_step_size=1, batch_size=1):
+    frame_gen = yield_images(filepath, frame_step_size, batch_size)
+
+    fps = FPS().start()
+
+    while True:
+
+        full = any(q.full() for q in queues)
+
+        if not full:
+            # Read next frames
+            try:
+                frames, timestamps = next(frame_gen)
+                fps.update(len(frames))
+            except StopIteration:
+                # Inform main thread the all frames were read
+                e_vid.set()
+
+                logger.info("Finished loading video, waiting for detection processes")
+
+                # Stop fps measurement
+                fps.stop()
+                h, m, s, _ = time_from_ms(fps.elapsed() * 1000)
+                logger.info('Processed video {} with {:.2f} frames per second in {:.0f}:{:.0f}:{:.0f}'.format(
+                    os.path.basename(filepath), fps.fps(), h, m, s))
+                break
+
+            for q in queues:
+                q.put((frames, timestamps, video_meta))
+
+            logger.info('Put frame {}/{} in queues'.format(
+                fps.frames_seen(), video_meta['nb_frames'] // frame_step_size))
+
+        else:
+            time.sleep(0.1)
