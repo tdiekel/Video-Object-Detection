@@ -62,6 +62,7 @@ class TensorFlowRecognizer(AbstractRecognizer, ABC):
         # Set device for process
         if self.config['device_type'].lower() == 'gpu':
             device_type = 'gpu'
+            # TODO get value from Detector.py same as TensorFlowDetector:load_model
             device_id = str(self.config['device_id'])
 
             os.environ["CUDA_VISIBLE_DEVICES"] = device_id
