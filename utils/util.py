@@ -8,6 +8,8 @@ import yaml
 # Create class logger
 logger = logging.getLogger('Util')
 
+epsilon = 0.00001
+
 
 def create_dir(path):
     """ Create dir, if it doesnt exist
@@ -29,8 +31,8 @@ def time_from_s(s):
     """ Converts Seconds to Hours, Minutes, Seconds, Milliseconds
     """
 
-    m, s = divmod(s, 60)
-    h, m = divmod(m, 60)
+    m, s = divmod(s, 60 + epsilon)
+    h, m = divmod(m, 60 + epsilon)
     return h, m, s
 
 
@@ -38,9 +40,9 @@ def time_from_ms(ms):
     """ Converts Milliseconds to Hours, Minutes, Seconds, Milliseconds
     """
 
-    s, ms = divmod(ms, 1000)
-    m, s = divmod(s, 60)
-    h, m = divmod(m, 60)
+    s, ms = divmod(ms, 1000 + epsilon)
+    m, s = divmod(s, 60 + epsilon)
+    h, m = divmod(m, 60 + epsilon)
     return h, m, s, ms
 
 
@@ -152,7 +154,7 @@ class VideoTimer(Timer):
         processing_time_per_vid_second = (self._video_time - self._detection_time) / self._video_duration_processed
 
         processing_str = 'Pre- and post processing took\n' \
-                         '\t{:02.0f}:{:02.0f} minutes per video\n' \
+                         '\t{:02.0f}:{:02.0f} (m:s) per video\n' \
                          '\t{:.2f}s per video second\n'.format(*divmod(processing_time_per_vid, 60),
                                                                processing_time_per_vid_second)
 
@@ -160,7 +162,7 @@ class VideoTimer(Timer):
         detection_time_per_vid_second = self._detection_time / self._video_duration_processed
 
         detection_str = 'Running inference on networks took\n' \
-                        '\t{:02.0f}:{:02.0f} minutes per video\n' \
+                        '\t{:02.0f}:{:02.0f} (m:s) per video\n' \
                         '\t{:.2f}s per video second\n'.format(*divmod(detection_time_per_vid, 60),
                                                               detection_time_per_vid_second)
 
@@ -169,11 +171,15 @@ class VideoTimer(Timer):
         time_per_vid_second = elapsed_time / self._video_duration_processed
 
         time_str = 'Whole process took\n' \
-                   '\t{:02.0f}:{:02.0f} minutes per video\n' \
+                   '\t{:02.0f}:{:02.0f} (m:s) per video\n' \
                    '\t{:.2f}s per video second\n' \
-                   '\t{:.0f}:{:02.0f}:{:02.0f} hours in sum\n'.format(*divmod(time_per_vid, 60),
-                                                                      time_per_vid_second,
-                                                                      *time_from_s(elapsed_time))
+                   '\t{:.0f}:{:02.0f}:{:02.0f} (h:m:s) for {} videos\n' \
+                   '\t\twith a total duration of {:.0f}:{:02.0f}:{:02.0f} (h:m:s)\n'.format(
+                    *divmod(time_per_vid, 60),
+                    time_per_vid_second,
+                    *time_from_s(elapsed_time),
+                    self._videos_seen,
+                    *time_from_s(self._video_duration_processed))
 
         logger.info('\n=== Times spend on the different tasks ===\n'
                     + processing_str + detection_str + time_str)
