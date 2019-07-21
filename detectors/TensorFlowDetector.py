@@ -51,16 +51,14 @@ class TensorFlowDetector(AbstractDetector, ABC):
         # Set device for process
         if self.config['device_type'].lower() == 'gpu':
             device_type = 'gpu'
-            device_id = str(self.config['device_id'])
 
-            os.environ["CUDA_VISIBLE_DEVICES"] = device_id
+            os.environ["CUDA_VISIBLE_DEVICES"] = str(device_id)
         else:
             device_type = 'cpu'
-            device_id = str(self.config['device_id'])
 
             os.environ["CUDA_VISIBLE_DEVICES"] = '-1'
 
-        logger.info('Loading model on {}:{}'.format(device_type, device_id))
+        logger.info('Loading model on {}:{}'.format(device_type, str(device_id)))
 
         detection_graph = tf.Graph()
 
