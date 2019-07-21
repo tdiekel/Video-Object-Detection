@@ -172,9 +172,9 @@ def check_args(args):
     # Dataset group
     assert_folder(args.data_path)
 
-    if args.videos == 'one':
+    if args.videos == 'one': # TODO check first if fname was given
         assert_file(os.path.join(args.data_path, args.fname))
-    elif args.videos == 'list':
+    elif args.videos == 'list': #TODO check if list was given
         assert_file([os.path.join(args.data_path, fname) for fname in args.list])
     elif args.videos == 'all':
         video_files = glob(os.path.join(args.data_path, '*' + args.file_type))
