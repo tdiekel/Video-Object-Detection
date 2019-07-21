@@ -129,7 +129,8 @@ def yield_images(filepath, frame_step_size=1, batch_size=1):
                     frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
 
                 if not ret:
-                    raise RuntimeError("Failed to capture image")
+                    logger.warn("Failed to capture frame")
+                    continue
 
                 frames.append(frame)
                 timestamps.append(cap.get(cv2.CAP_PROP_POS_MSEC))
@@ -150,7 +151,14 @@ def video_worker(filepath, video_meta, e_vid, queues, frame_step_size=1, batch_s
             # Read next frames
             try:
                 frames, timestamps = next(frame_gen)
+                num_frames = len(frames)
+
                 fps.update(len(frames))
+
+                # Skip if no frames where retrived
+                if num_frames == 0:
+                    continue
+
             except StopIteration:
                 # Inform main thread the all frames were read
                 e_vid.set()
