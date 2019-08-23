@@ -29,12 +29,14 @@ data:
   #        ...
   #    ]
   #}
-  label_map: ./data/models/tensorflow/01_all_faster_r50/label_map.json
+  label_maps:
+    - ./data/models/tensorflow/specialists/vehicle/label_map.pbtxt
+    - ./data/models/tensorflow/specialists/traffic_signs/label_map.json
   # Target sample rate of output in [Hz]
   target_sample_rate: 100
   # Time delta [seconds] in which detected objects are counted as one.
   # The data will be interpolated between these detections.
-  relevant_future: 5
+  relevant_future: 1
 
 # Road condition settings
 road_condition:
@@ -65,12 +67,16 @@ object_detection:
   # Settings for TensorFlow
   tensorflow:
     # Path to the TensorFlow graph
-    graph_path: ./data/models/tensorflow/01_all_faster_r50/frozen_inference_graph.pb
+    graph_paths:
+      - ./data/models/tensorflow/specialists/vehicle/frozen_inference_graph.pb
+      - ./data/models/tensorflow/specialists/traffic_signs/frozen_inference_graph.pb
     # Input type the inference graph expects.
     # Options: image_tensor, tf_example
     input_type: image_tensor
     # pbtxt label map with the class names and ids
-    label_map: ./data/models/tensorflow/01_all_faster_r50/label_map.pbtxt
+    label_maps:
+      - ./data/models/tensorflow/specialists/vehicle/label_map.pbtxt
+      - ./data/models/tensorflow/specialists/traffic_signs/label_map.pbtxt
     # Minimum score threshold for detection.
     # Must be between 0.0 and 1.0
     thresh: 0.5

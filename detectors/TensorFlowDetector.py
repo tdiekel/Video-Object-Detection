@@ -13,8 +13,9 @@ logger = logging.getLogger('TensorFlowDetector')
 
 
 class TensorFlowDetector(AbstractDetector, ABC):
-    def __init__(self):
+    def __init__(self, graph_id=0):
         logger.info('Initializing')
+        self.graph_id=0
 
         # Load config
         self.config = load_config()['object_detection']
@@ -38,7 +39,7 @@ class TensorFlowDetector(AbstractDetector, ABC):
 
         logger.info('Loading label map')
 
-        label_map = label_map_util.load_labelmap(self.config_tf['label_map'])
+        label_map = label_map_util.load_labelmap(self.config_tf['label_maps'][self.graph_id])
         categories = label_map_util.convert_label_map_to_categories(label_map,
                                                                     max_num_classes=self.config_tf['max_class_id'],
                                                                     use_display_name=True)
@@ -65,7 +66,7 @@ class TensorFlowDetector(AbstractDetector, ABC):
         with detection_graph.as_default():
             od_graph_def = tf.GraphDef()
 
-            with tf.gfile.GFile(self.config_tf['graph_path'], 'rb') as fid:
+            with tf.gfile.GFile(self.config_tf['graph_paths'][self.graph_id], 'rb') as fid:
                 serialized_graph = fid.read()
                 od_graph_def.ParseFromString(serialized_graph)
                 tf.import_graph_def(od_graph_def, name='')

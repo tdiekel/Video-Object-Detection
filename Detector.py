@@ -54,7 +54,7 @@ class Detector:
             self.detector_config = self.config['object_detection']['tensorflow']
 
         # Load label maps
-        self.categories = json.load(open(self.config['data']['label_map'], 'r')).get('classes')
+        self.categories = json.load(open(self.config['data']['label_maps'][1], 'r')).get('classes')
         self.categories = [{'id': cat['id'], 'name': cat['name']} for cat in self.categories]
         self.road_condition_label = TensorFlowRecognizer.load_recognizer_label()
 
@@ -142,7 +142,7 @@ class Detector:
         for i, device_id in enumerate(device_ids):
             events.append(Event())
             processes.append(Process(target=self.detection_worker,
-                                     args=(events[-1], q_img_det, q_result_det, device_id, lock_det,)))
+                                     args=(events[-1], q_img_det, q_result_det, device_id, i, lock_det,)))
 
         # Start processes
         for process in processes:
@@ -277,7 +277,7 @@ class Detector:
                 # Put results in queue
                 q_result_rc.put((recognitions, timestamps, video_meta))
 
-    def detection_worker(self, event, q_img_det, q_result_det, device_id, lock):
+    def detection_worker(self, event, q_img_det, q_result_det, device_id, graph_id, lock):
         """ Runs detection for the images in queue :param q_img_det:
             and puts results in queue :param q_result_det:
 
@@ -289,7 +289,7 @@ class Detector:
         """
 
         # Load the detection model into memory
-        detector = self.detector_class()
+        detector = self.detector_class(graph_id)
         detector.load_model(device_id)
 
         # Send signal the loading is finished

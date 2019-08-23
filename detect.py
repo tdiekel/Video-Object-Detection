@@ -74,7 +74,7 @@ def check_config(config):
     assert 0 < config['data']['fps_step'], \
         'FPS step size must be larger than 0.'
 
-    assert_file(config['data']['label_map'])
+    assert_file(config['data']['label_maps'])
 
     assert isinstance(config['data']['target_sample_rate'], int), \
         'Target sample rate must be integer.'
@@ -105,12 +105,12 @@ def check_config(config):
     # TODO check for multiple frameworks
 
     # check tensorflow
-    assert_file(config['object_detection']['tensorflow']['graph_path'])
+    assert_file(config['object_detection']['tensorflow']['graph_paths'])
 
     assert config['object_detection']['tensorflow']['input_type'] in ['image_tensor', 'tf_example'], \
         'Input type must be \'image_tensor\' or \'tf_example\'.'
 
-    assert_file(config['object_detection']['tensorflow']['label_map'])
+    assert_file(config['object_detection']['tensorflow']['label_maps'])
 
     assert isinstance(config['object_detection']['tensorflow']['thresh'], float), \
         'Threshold must be float.'
